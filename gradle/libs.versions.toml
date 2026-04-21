@@ -1,0 +1,17 @@
+[versions]
+openapi-generator = "7.10.0"
+node-gradle = "7.1.0"
+jspecify = "1.0.0"
+jakarta-annotation = "3.0.0"
+
+[libraries]
+jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version = "2.21" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version = "2.21.0" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
+jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api", version.ref = "jakarta-annotation" }
+
+[plugins]
+openapi-generator = { id = "org.openapi.generator", version.ref = "openapi-generator" }
+node-gradle = { id = "com.github.node-gradle.node", version.ref = "node-gradle" }
+axion-release = { id = "pl.allegro.tech.build.axion-release", version = "1.21.1" }
+nexus-publish = { id = "io.github.gradle-nexus.publish-plugin", version = "2.0.0" }
