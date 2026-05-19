@@ -29,17 +29,19 @@ node {
     version = "25.9.0"
 }
 
-data class Variant(val name: String, val specUrl: String, val modelPackage: String)
+data class Variant(val name: String, val specUrl: String, val specSha: String, val modelPackage: String)
 
 val variants = listOf(
     Variant(
         name = "ghes",
-        specUrl = "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions/ghes-3.20/ghes-3.20.json",
+        specUrl = property("github.ghes.specUrl") as String,
+        specSha = "",
         modelPackage = "com.github.bgalek.github.ghes.models",
     ),
     Variant(
         name = "dotcom",
-        specUrl = "https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions/api.github.com/api.github.com.json",
+        specUrl = property("github.dotcom.specUrl") as String,
+        specSha = property("github.dotcom.sha") as String,
         modelPackage = "com.github.bgalek.github.dotcom.models",
     ),
 )
@@ -56,6 +58,10 @@ variants.forEach { v ->
 
     val preprocessTask = tasks.register<NodeTask>("preprocessOpenapi$capitalized") {
         description = "Preprocess the ${v.name} OpenAPI spec."
+        doFirst {
+            val shaInfo = if (v.specSha.isNotEmpty()) " (SHA: ${v.specSha})" else ""
+            logger.lifecycle("Fetching ${v.name} spec from: ${v.specUrl}$shaInfo")
+        }
         script = file("preprocess-openapi.mjs")
         args = listOf(preprocessedSpec.get().asFile.absolutePath)
         environment = mapOf("OPENAPI_URL" to v.specUrl)
@@ -132,10 +138,7 @@ variants.forEach { v ->
         archiveBaseName = artifactBase
         from(variantSourceSet.output)
         manifest {
-            attributes(
-                "Implementation-Title" to artifactBase,
-                "Implementation-Version" to project.version,
-            )
+            attributes("Implementation-Title" to artifactBase, "Implementation-Version" to project.version, "Spec-Url" to v.specUrl)
         }
     }
 
@@ -194,7 +197,7 @@ publishing {
                     name = "github-models-${v.name}"
                     description = "Generated Java models for the GitHub ${v.name} REST API event payloads."
                     url = "https://github.com/bgalek/github-models/"
-                    inceptionYear = "2025"
+                    inceptionYear = "2026"
                     licenses {
                         license {
                             name = "The Apache License, Version 2.0"

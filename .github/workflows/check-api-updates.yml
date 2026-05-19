@@ -1,0 +1,138 @@
+name: Check GitHub API Updates
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.check.outputs.has_updates }}
+      ghes_changed: ${{ steps.check.outputs.ghes_changed }}
+      dotcom_changed: ${{ steps.check.outputs.dotcom_changed }}
+      latest_ghes: ${{ steps.check.outputs.latest_ghes }}
+      dotcom_sha: ${{ steps.check.outputs.dotcom_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for new GitHub API versions
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LATEST_GHES=$(gh api repos/github/rest-api-description/contents/descriptions \
+            --jq '[.[].name | select(startswith("ghes-"))] | sort_by(ltrimstr("ghes-") | split(".") | map(tonumber)) | last')
+
+          DOTCOM_SHA=$(gh api "repos/github/rest-api-description/commits?path=descriptions/api.github.com/api.github.com.json&per_page=1" \
+            --jq '.[0].sha')
+
+          KNOWN_GHES=$(grep "^github\.ghes\.specUrl=" gradle.properties | grep -o "ghes-[0-9]*\.[0-9]*" | head -1)
+          KNOWN_DOTCOM_SHA=$(grep "^github\.dotcom\.sha=" gradle.properties | cut -d'=' -f2)
+
+          echo "latest_ghes=$LATEST_GHES" >> $GITHUB_OUTPUT
+          echo "dotcom_sha=$DOTCOM_SHA" >> $GITHUB_OUTPUT
+
+          GHES_CHANGED=false
+          DOTCOM_CHANGED=false
+          if [ "$LATEST_GHES" != "$KNOWN_GHES" ]; then
+            echo "GHES version changed: $KNOWN_GHES -> $LATEST_GHES"
+            GHES_CHANGED=true
+          fi
+          if [ -n "$KNOWN_DOTCOM_SHA" ] && [ "$DOTCOM_SHA" != "$KNOWN_DOTCOM_SHA" ]; then
+            echo "api.github.com updated: $KNOWN_DOTCOM_SHA -> $DOTCOM_SHA"
+            DOTCOM_CHANGED=true
+          fi
+
+          echo "ghes_changed=$GHES_CHANGED" >> $GITHUB_OUTPUT
+          echo "dotcom_changed=$DOTCOM_CHANGED" >> $GITHUB_OUTPUT
+          if [ "$GHES_CHANGED" = "true" ] || [ "$DOTCOM_CHANGED" = "true" ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    needs: check
+    if: needs.check.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Update GHES version in gradle.properties
+        if: needs.check.outputs.ghes_changed == 'true'
+        run: |
+          LATEST="${{ needs.check.outputs.latest_ghes }}"
+          sed -i "/^github\.ghes\.specUrl=/d" gradle.properties
+          echo "github.ghes.specUrl=https://raw.githubusercontent.com/github/rest-api-description/refs/heads/main/descriptions/${LATEST}/${LATEST}.json" >> gradle.properties
+
+      - name: Update dotcom SHA in gradle.properties
+        if: needs.check.outputs.dotcom_changed == 'true'
+        run: |
+          sed -i "/^github\.dotcom\.sha=/d" gradle.properties
+          echo "github.dotcom.sha=${{ needs.check.outputs.dotcom_sha }}" >> gradle.properties
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gradle.properties
+          GHES_CHANGED="${{ needs.check.outputs.ghes_changed }}"
+          DOTCOM_CHANGED="${{ needs.check.outputs.dotcom_changed }}"
+          if [ "$GHES_CHANGED" = "true" ] && [ "$DOTCOM_CHANGED" = "true" ]; then
+            MSG="chore: update GitHub API specs (${{ needs.check.outputs.latest_ghes }}, dotcom)"
+          elif [ "$GHES_CHANGED" = "true" ]; then
+            MSG="chore: update GitHub API specs (${{ needs.check.outputs.latest_ghes }})"
+          else
+            MSG="chore: update GitHub API specs (dotcom)"
+          fi
+          git commit -m "$MSG"
+          git push origin HEAD:main
+
+      - name: Release
+        run: ./gradlew release
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY_PASSWORD: ${{ secrets.GPG_PRIVATE_KEY_PASSWORD }}
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          VERSION="${TAG#release-}"
+          GHES="${{ needs.check.outputs.latest_ghes }}"
+          DOTCOM_SHA="${{ needs.check.outputs.dotcom_sha }}"
+          cat > release-notes.md << EOF
+          ## GitHub API Versions
+
+          | API | Version |
+          |-----|---------|
+          | GHES | [$GHES](https://github.com/github/rest-api-description/tree/main/descriptions/$GHES) |
+          | api.github.com | [${DOTCOM_SHA:0:7}](https://github.com/github/rest-api-description/commit/$DOTCOM_SHA) |
+
+          ## Maven Central
+
+          | Artifact | Coordinates |
+          |----------|-------------|
+          | github-models-ghes | [com.github.bgalek.github:github-models-ghes:$VERSION](https://central.sonatype.com/artifact/com.github.bgalek.github/github-models-ghes/$VERSION) |
+          | github-models-dotcom | [com.github.bgalek.github:github-models-dotcom:$VERSION](https://central.sonatype.com/artifact/com.github.bgalek.github/github-models-dotcom/$VERSION) |
+          EOF
+          gh release create "$TAG" --title "$TAG" --notes-file release-notes.md build/libs/github-models-*.jar
