@@ -28,6 +28,47 @@ function pascal(s) {
         .replace(/^./, (c) => c.toUpperCase());
 }
 
+// Classify a oneOf/anyOf variant: 'scalar' for an inline primitive, 'null' for
+// the JSON null type, or null for anything else (refs, objects, arrays, nested
+// compositions) that must not be collapsed.
+function variantKind(node) {
+    if (!node || typeof node !== 'object' || node.$ref) return null;
+    if (node.properties || node.additionalProperties || node.items ||
+        node.allOf || node.oneOf || node.anyOf) return null;
+    if (node.type === 'null') return 'null';
+    if (['string', 'integer', 'number', 'boolean'].includes(node.type)) return 'scalar';
+    return null;
+}
+
+// GitHub's spec models fields like `repository.created_at` as
+// `oneOf: [{type: integer}, {type: string, format: date-time}]`. openapi-generator's
+// Java generator emits an empty placeholder class for such scalar unions, which Jackson
+// cannot construct from a number or string — every payload carrying one fails to
+// deserialize. Collapse any union whose variants are all primitive scalars (optionally
+// including the null type) into a free-form schema so the generator emits a permissive
+// `Object` field that accepts whichever scalar arrives.
+function collapseScalarUnions(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+        node.forEach(collapseScalarUnions);
+        return;
+    }
+    for (const key of ['oneOf', 'anyOf']) {
+        const variants = node[key];
+        if (!Array.isArray(variants) || variants.length === 0) continue;
+        const kinds = variants.map(variantKind);
+        if (kinds.every((k) => k !== null) && kinds.includes('scalar')) {
+            delete node[key];
+            delete node.title;
+            delete node.discriminator;
+            delete node.type;
+            delete node.format;
+            if (kinds.includes('null')) node.nullable = true;
+        }
+    }
+    for (const value of Object.values(node)) collapseScalarUnions(value);
+}
+
 // Walk a schema node and set `title` on inline object/enum schemas so
 // openapi-generator names them using the parent context instead of
 // auto-generating colliding names like Repository1, Repository2, ...
@@ -76,6 +117,10 @@ function annotate(node, parentName, seenObjects) {
     console.log('Fetching spec...');
     const text = await fetch(URL);
     const spec = JSON.parse(text);
+
+    // Collapse scalar oneOf/anyOf unions before naming, so the discarded
+    // variants never get titles and no empty placeholder classes are generated.
+    collapseScalarUnions(spec);
 
     const seen = new Set();
 
