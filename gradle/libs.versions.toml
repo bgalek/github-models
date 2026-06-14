@@ -5,8 +5,8 @@ jspecify = "1.0.0"
 jakarta-annotation = "3.0.0"
 
 [libraries]
-jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version = "2.21" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version = "2.21.0" }
+jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version = "2.22" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version = "2.22.0" }
 jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 jakarta-annotation-api = { module = "jakarta.annotation:jakarta.annotation-api", version.ref = "jakarta-annotation" }
 
