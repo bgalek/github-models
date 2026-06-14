@@ -1,5 +1,5 @@
 [versions]
-openapi-generator = "7.10.0"
+openapi-generator = "7.23.0"
 node-gradle = "7.1.0"
 jspecify = "1.0.0"
 jakarta-annotation = "3.0.0"
