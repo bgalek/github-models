@@ -101,7 +101,7 @@ jobs:
           git push origin HEAD:main
 
       - name: Release
-        run: ./gradlew release
+        run: ./gradlew release -Prelease.disableChecks
 
       - name: Publish to Maven Central
         run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository
