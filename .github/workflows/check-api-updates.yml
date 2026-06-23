@@ -18,7 +18,7 @@ jobs:
       latest_ghes: ${{ steps.check.outputs.latest_ghes }}
       dotcom_sha: ${{ steps.check.outputs.dotcom_sha }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Check for new GitHub API versions
         id: check
@@ -61,7 +61,7 @@ jobs:
     if: needs.check.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-java@v5
         with:
