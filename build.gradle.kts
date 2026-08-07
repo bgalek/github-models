@@ -1,5 +1,6 @@
 import com.github.gradle.node.task.NodeTask
 import org.openapitools.generator.gradle.plugin.tasks.GenerateTask
+import java.time.Duration
 
 plugins {
     `java-library`
@@ -235,6 +236,8 @@ publishing {
 }
 
 nexusPublishing {
+    connectTimeout = Duration.ofMinutes(5)
+    clientTimeout = Duration.ofMinutes(5)
     repositories {
         sonatype {
             username = System.getenv("SONATYPE_USERNAME")
